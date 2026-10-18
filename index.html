@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Touch Pop - Quest 3S</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script>
+// 周りに浮かぶ玉をコントローラーで触って割るゲーム（60秒）
+const COLORS = ['#ff8a5b', '#ffd166', '#7bdff2', '#c3a6ff'];
+const GAME_SECONDS = 60;
+const ORB_COUNT = 4;
+
+AFRAME.registerComponent('pop-game', {
+  init() {
+    this.score = 0;
+    this.timeLeft = 0;
+    this.playing = false;
+    this.orbs = [];
+    this.lastShown = -1;
+    this.hands = [document.getElementById('leftHand'), document.getElementById('rightHand')];
+    this.hud = document.getElementById('hud');
+    this.startOrb = document.getElementById('startOrb');
+    this.a = new THREE.Vector3();
+    this.b = new THREE.Vector3();
+    this.startOrb.addEventListener('click', () => { if (!this.playing) this.start(); });
+  },
+
+  start() {
+    this.score = 0;
+    this.timeLeft = GAME_SECONDS;
+    this.playing = true;
+    this.lastShown = -1;
+    this.startOrb.setAttribute('visible', false);
+    for (let i = 0; i < ORB_COUNT; i++) this.spawn();
+  },
+
+  end() {
+    this.playing = false;
+    this.orbs.forEach(o => o.parentNode && o.parentNode.removeChild(o));
+    this.orbs = [];
+    this.startOrb.setAttribute('visible', true);
+    this.hud.setAttribute('value', `SCORE ${this.score}\nTouch the orb to play again`);
+  },
+
+  spawn() {
+    const o = document.createElement('a-sphere');
+    const angle = (Math.random() - 0.5) * Math.PI * 0.8; // 前方の半円
+    const r = 0.35 + Math.random() * 0.3;                 // 手が届く距離
+    const x = Math.sin(angle) * r, z = -Math.cos(angle) * r;
+    const y = 0.9 + Math.random() * 0.7;
+    o.setAttribute('radius', 0.07);
+    o.setAttribute('color', COLORS[Math.floor(Math.random() * COLORS.length)]);
+    o.setAttribute('position', `${x} ${y} ${z}`);
+    o.setAttribute('animation',
+      `property: position; to: ${x} ${y + 0.05} ${z}; dir: alternate; loop: true; ` +
+      `dur: ${1200 + Math.random() * 800}; easing: easeInOutSine`);
+    o.classList.add('clickable');
+    o.addEventListener('click', () => this.pop(o));
+    this.el.sceneEl.appendChild(o);
+    this.orbs.push(o);
+  },
+
+  pop(o, hand) {
+    if (!this.playing) return;
+    const i = this.orbs.indexOf(o);
+    if (i < 0) return;
+    this.orbs.splice(i, 1);
+    o.parentNode.removeChild(o);
+    this.score++;
+    this.lastShown = -1;
+    this.buzz(hand);
+    this.spawn();
+  },
+
+  buzz(hand) {
+    // 触ったコントローラーを短く振動させる
+    const tc = hand && hand.components['tracked-controls'];
+    const pad = tc && tc.controller && tc.controller.gamepad;
+    const act = pad && pad.hapticActuators && pad.hapticActuators[0];
+    if (act && act.pulse) act.pulse(0.6, 40);
+  },
+
+  tick(t, dt) {
+    if (!dt) return;
+    for (const h of this.hands) {
+      h.object3D.getWorldPosition(this.a);
+      if (this.a.lengthSq() === 0) continue; // 未接続
+      if (!this.playing) {
+        this.startOrb.object3D.getWorldPosition(this.b);
+        if (this.a.distanceTo(this.b) < 0.15) this.start();
+        continue;
+      }
+      for (const o of this.orbs.slice()) {
+        o.object3D.getWorldPosition(this.b);
+        if (this.a.distanceTo(this.b) < 0.12) this.pop(o, h);
+      }
+    }
+    if (!this.playing) return;
+    this.timeLeft -= dt / 1000;
+    if (this.timeLeft <= 0) { this.end(); return; }
+    const sec = Math.ceil(this.timeLeft);
+    if (sec !== this.lastShown) {
+      this.lastShown = sec;
+      this.hud.setAttribute('value', `SCORE ${this.score}   TIME ${sec}`);
+    }
+  }
+});
+</script>
+</head>
+<body>
+<a-scene pop-game cursor="rayOrigin: mouse" raycaster="objects: .clickable"
+         renderer="antialias: true" background="color: #1d2b45">
+  <a-entity light="type: ambient; intensity: 0.7"></a-entity>
+  <a-entity light="type: directional; intensity: 0.8" position="1 3 2"></a-entity>
+  <a-circle radius="6" rotation="-90 0 0" color="#2a3d5c"></a-circle>
+
+  <a-text id="hud" value="Touch the orb to start" position="0 2.0 -1.4"
+          align="center" width="2.4" color="#ffffff"></a-text>
+
+  <a-sphere id="startOrb" class="clickable" position="0 1.3 -0.5" radius="0.1" color="#ffd166"
+            animation="property: scale; to: 1.15 1.15 1.15; dir: alternate; loop: true; dur: 700; easing: easeInOutSine"></a-sphere>
+
+  <a-entity id="rig">
+    <a-entity camera look-controls wasd-controls position="0 1.6 0"></a-entity>
+    <a-entity id="leftHand" meta-touch-controls="hand: left">
+      <a-sphere radius="0.03" color="#ffffff"></a-sphere>
+    </a-entity>
+    <a-entity id="rightHand" meta-touch-controls="hand: right">
+      <a-sphere radius="0.03" color="#ffffff"></a-sphere>
+    </a-entity>
+  </a-entity>
+</a-scene>
+</body>
+</html>
